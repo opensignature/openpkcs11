@@ -1,0 +1,2 @@
+gcc -c -Wall -fpic openpkcs11.c
+gcc -shared -o openpkcs11.so openpkcs11.o
