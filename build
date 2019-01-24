@@ -3,7 +3,7 @@
 gcc -c -Wall -fpic openpkcs11.c
 
 # Linux
-gcc -shared -o openpkcs11.so openpkcs11.o -lcrypto
+gcc -shared -o libopenpkcs11.so openpkcs11.o -lcrypto
 
 # Windows Msys2
-# gcc -shared -o openpkcs11.dll openpkcs11.o -lcrypto -lws2_32 -lcrypt32
+# gcc -shared -o libopenpkcs11.dll libopenpkcs11.o -lcrypto -lws2_32 -lcrypt32
