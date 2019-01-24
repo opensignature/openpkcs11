@@ -1,3 +1,5 @@
+#Require openssl libraries and headers
+
 gcc -c -Wall -fpic openpkcs11.c
 
 # Linux
