@@ -44,6 +44,7 @@
 #include <windows.h>
 #else
 #include <dlfcn.h>
+#include <unistd.h>
 #endif
 #include <openssl/opensslconf.h>
 #include <openssl/opensslv.h>
@@ -927,7 +928,8 @@ static int pkcs11_rsa_priv_dec_method(int flen, const unsigned char *from,
 		priv_dec = RSA_meth_get_priv_dec(RSA_get_default_method());
 		return priv_dec(flen, from, to, rsa, padding);
 	}
-	return PKCS11_private_decrypt(flen, from, to, key, padding);
+
+	return pkcs11_private_decrypt(flen, from, to, key, padding);
 }
 
 static int pkcs11_rsa_priv_enc_method(int flen, const unsigned char *from,
@@ -940,7 +942,8 @@ static int pkcs11_rsa_priv_enc_method(int flen, const unsigned char *from,
 		priv_enc = RSA_meth_get_priv_enc(RSA_get_default_method());
 		return priv_enc(flen, from, to, rsa, padding);
 	}
-	return PKCS11_private_encrypt(flen, from, to, key, padding);
+
+	return pkcs11_private_encrypt(flen, from, to, key, padding);
 }
 
 static int pkcs11_rsa_free_method(RSA *rsa)
@@ -2180,22 +2183,6 @@ int PKCS11_sign(int type, const unsigned char *m, unsigned int m_len,
 	if (check_key_fork(key) < 0)
 		return -1;
 	return pkcs11_sign(type, m, m_len, sigret, siglen, key);
-}
-
-int PKCS11_private_encrypt(int flen, const unsigned char *from, unsigned char *to,
-		PKCS11_KEY *key, int padding)
-{
-	if (check_key_fork(key) < 0)
-		return -1;
-	return pkcs11_private_encrypt(flen, from, to, key, padding);
-}
-
-int PKCS11_private_decrypt(int flen, const unsigned char *from, unsigned char *to,
-		PKCS11_KEY *key, int padding)
-{
-	if (check_key_fork(key) < 0)
-		return -1;
-	return pkcs11_private_decrypt(flen, from, to, key, padding);
 }
 
 int PKCS11_verify(int type, const unsigned char *m, unsigned int m_len,
@@ -6127,7 +6114,6 @@ static int pkcs11_try_pkey_ec_sign(EVP_PKEY_CTX *evp_pkey_ctx,
 		return -1;
 
 	if (!cpriv->sign_initialized) {
-		int padding;
 		CK_MECHANISM mechanism;
 		memset(&mechanism, 0, sizeof mechanism);
 
