@@ -62,11 +62,71 @@
 #endif
 #include "openpkcs11.h"
 
+#define PKCS11_ENGINE_ID "pkcs11"
+#define PKCS11_ENGINE_NAME "pkcs11 engine"
 
+static int pkcs11_idx = -1;
 static int pkcs11_init_slot(PKCS11_CTX *, PKCS11_SLOT *, CK_SLOT_ID);
 static void pkcs11_release_slot(PKCS11_CTX *, PKCS11_SLOT *);
 static int pkcs11_check_token(PKCS11_CTX *, PKCS11_SLOT *);
 static void pkcs11_destroy_token(PKCS11_TOKEN *);
+
+#if defined(_WIN32) || defined(_WIN64)
+#define strncasecmp _strnicmp
+#endif
+
+/* The maximum length of an internally-allocated PIN */
+#define MAX_PIN_LENGTH   32
+#define MAX_VALUE_LEN	200
+
+struct st_engine_ctx {
+	/* Engine configuration */
+	/*
+	 * The PIN used for login. Cache for the ctx_get_pin function.
+	 * The memory for this PIN is always owned internally,
+	 * and may be freed as necessary. Before freeing, the PIN
+	 * must be whitened, to prevent security holes.
+	 */
+	char *pin;
+	size_t pin_length;
+	int verbose;
+	char *module;
+	char *init_args;
+	UI_METHOD *ui_method;
+	void *callback_data;
+	int force_login;
+
+	/* Engine initialization mutex */
+#if OPENSSL_VERSION_NUMBER >= 0x10100004L && !defined(LIBRESSL_VERSION_NUMBER)
+	CRYPTO_RWLOCK *rwlock;
+#else
+	int rwlock;
+#endif
+
+	/* Current operations */
+	PKCS11_CTX *pkcs11_ctx;
+	PKCS11_SLOT *slot_list;
+	unsigned int slot_count;
+};
+
+static ENGINE_CTX *get_ctx(ENGINE *engine)
+{
+	ENGINE_CTX *ctx;
+
+	if (pkcs11_idx < 0) {
+		pkcs11_idx = ENGINE_get_ex_new_index(0, "pkcs11", NULL, NULL, 0);
+		if (pkcs11_idx < 0)
+			return NULL;
+		ctx = NULL;
+	} else {
+		ctx = ENGINE_get_ex_data(engine, pkcs11_idx);
+	}
+	if (ctx == NULL) {
+		ctx = ctx_new();
+		ENGINE_set_ex_data(engine, pkcs11_idx, ctx);
+	}
+	return ctx;
+}
 
 /*
  * Get slotid from private
@@ -1399,12 +1459,24 @@ int pkcs11_authenticate(PKCS11_KEY *key)
 	char* prompt;
 	UI *ui;
 	int rv;
+	ENGINE *e;
+	ENGINE_CTX *ctxengine;
 
 	/* Handle CKF_PROTECTED_AUTHENTICATION_PATH */
 	if (token->secureLogin) {
 		rv = CRYPTOKI_call(ctx,
 			C_Login(spriv->session, CKU_CONTEXT_SPECIFIC, NULL, 0));
 		return rv == CKR_USER_ALREADY_LOGGED_IN ? 0 : rv;
+	}
+
+	e = ENGINE_by_id("pkcs11");
+	ctxengine = get_ctx(e);
+
+	if (ctxengine->pin != NULL) {
+		rv = CRYPTOKI_call(ctx,
+        	                   C_Login(spriv->session, CKU_CONTEXT_SPECIFIC,
+                	           (CK_UTF8CHAR *)ctxengine->pin, ctxengine->pin_length));
+	        return rv == CKR_USER_ALREADY_LOGGED_IN ? 0 : rv;
 	}
 
 	/* Call UI to ask for a PIN */
@@ -4290,11 +4362,6 @@ int parse_pkcs11_uri(ENGINE_CTX *ctx,
 	return rv;
 }
 
-#define PKCS11_ENGINE_ID "pkcs11"
-#define PKCS11_ENGINE_NAME "pkcs11 engine"
-
-static int pkcs11_idx = -1;
-
 /* The definitions for control commands specific to this engine */
 
 /* need to add function to pass in reader id? or user reader:key as key id string? */
@@ -4342,25 +4409,6 @@ static const ENGINE_CMD_DEFN engine_cmd_defns[] = {
 		ENGINE_CMD_FLAG_NO_INPUT},
 	{0, NULL, NULL, 0}
 };
-
-static ENGINE_CTX *get_ctx(ENGINE *engine)
-{
-	ENGINE_CTX *ctx;
-
-	if (pkcs11_idx < 0) {
-		pkcs11_idx = ENGINE_get_ex_new_index(0, "pkcs11", NULL, NULL, 0);
-		if (pkcs11_idx < 0)
-			return NULL;
-		ctx = NULL;
-	} else {
-		ctx = ENGINE_get_ex_data(engine, pkcs11_idx);
-	}
-	if (ctx == NULL) {
-		ctx = ctx_new();
-		ENGINE_set_ex_data(engine, pkcs11_idx, ctx);
-	}
-	return ctx;
-}
 
 /* Destroy the context allocated with ctx_new() */
 static int engine_destroy(ENGINE *engine)
@@ -4602,44 +4650,6 @@ void ERR_ENG_error(int function, int reason, char *file, int line)
         ENG_lib_error_code = ERR_get_next_error_library();
     ERR_PUT_error(ENG_lib_error_code, function, reason, file, line);
 }
-
-#if defined(_WIN32) || defined(_WIN64)
-#define strncasecmp _strnicmp
-#endif
-
-/* The maximum length of an internally-allocated PIN */
-#define MAX_PIN_LENGTH   32
-#define MAX_VALUE_LEN	200
-
-struct st_engine_ctx {
-	/* Engine configuration */
-	/*
-	 * The PIN used for login. Cache for the ctx_get_pin function.
-	 * The memory for this PIN is always owned internally,
-	 * and may be freed as necessary. Before freeing, the PIN
-	 * must be whitened, to prevent security holes.
-	 */
-	char *pin;
-	size_t pin_length;
-	int verbose;
-	char *module;
-	char *init_args;
-	UI_METHOD *ui_method;
-	void *callback_data;
-	int force_login;
-
-	/* Engine initialization mutex */
-#if OPENSSL_VERSION_NUMBER >= 0x10100004L && !defined(LIBRESSL_VERSION_NUMBER)
-	CRYPTO_RWLOCK *rwlock;
-#else
-	int rwlock;
-#endif
-
-	/* Current operations */
-	PKCS11_CTX *pkcs11_ctx;
-	PKCS11_SLOT *slot_list;
-	unsigned int slot_count;
-};
 
 /******************************************************************************/
 /* Utility functions                                                          */
