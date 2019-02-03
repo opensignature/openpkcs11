@@ -1123,9 +1123,6 @@ PKCS11_KEY_ops pkcs11_rsa_ops = {
 	pkcs11_update_ex_data_rsa
 };
 
-/* The maximum length of PIN */
-#define MAX_PIN_LENGTH   32
-
 static int pkcs11_find_keys(PKCS11_TOKEN *, unsigned int);
 static int pkcs11_next_key(PKCS11_CTX *ctx, PKCS11_TOKEN *token,
         CK_SESSION_HANDLE session, CK_OBJECT_CLASS type);
@@ -1475,7 +1472,7 @@ int pkcs11_authenticate(PKCS11_KEY *key)
 	if (ctxengine->pin != NULL) {
 		rv = CRYPTOKI_call(ctx,
         	                   C_Login(spriv->session, CKU_CONTEXT_SPECIFIC,
-                	           (CK_UTF8CHAR *)ctxengine->pin, ctxengine->pin_length));
+                	           (CK_UTF8CHAR *)ctxengine->pin, strlen(ctxengine->pin)));
 	        return rv == CKR_USER_ALREADY_LOGGED_IN ? 0 : rv;
 	}
 
